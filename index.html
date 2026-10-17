@@ -1,0 +1,112 @@
+<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Agenda</title>
+<link rel="manifest" href="manifest.webmanifest"><link rel="apple-touch-icon" href="icon-180.png"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="mobile-web-app-capable" content="yes"><meta name="theme-color" content="#0f766e">
+<style>
+:root{--bg:#f4f7f6;--s:#fff;--tx:#12302c;--mu:#5b7570;--ac:#0f766e;--ln:#d5e2df;--rd:#b42318}
+@media(prefers-color-scheme:dark){:root{--bg:#0e1917;--s:#162623;--tx:#e6f2ef;--mu:#9bb5af;--ac:#2dd4bf;--ln:#274039;--rd:#f97066}}
+*{box-sizing:border-box}[hidden]{display:none!important}html,body{margin:0;background:var(--bg);color:var(--tx);font:16px system-ui,sans-serif}
+body{padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom)}.w{max-width:720px;margin:auto;padding:12px;display:grid;gap:10px}
+.hd{display:flex;align-items:center;gap:8px}.hd b{flex:1;text-align:center;text-transform:capitalize}
+button,input,select,textarea{font:inherit;color:inherit}
+.b{border:1px solid var(--ln);background:var(--s);border-radius:12px;padding:10px 14px;min-height:44px}.p{background:var(--ac);border-color:var(--ac);color:#fff}.dg{color:var(--rd)}
+.cols{display:grid;grid-template-columns:1fr 1fr;gap:8px}.cols h3{margin:4px 0 8px;font-size:14px;color:var(--mu)}
+.c{display:block;width:100%;text-align:left;background:var(--s);border:1px solid var(--ln);border-left:4px solid var(--ac);border-radius:10px;padding:8px;margin-bottom:8px}
+.c small{display:block;color:var(--mu)}.c.confirmado{border-left-color:#16a34a}.c.compareceu{border-left-color:#64748b;opacity:.7}.c.faltou{border-left-color:var(--rd)}
+.fab{position:fixed;right:16px;bottom:calc(16px + env(safe-area-inset-bottom));width:56px;height:56px;border-radius:28px;font-size:28px;padding:0}
+.ov{position:fixed;inset:0;background:#0007;display:flex;align-items:flex-end;z-index:5}
+.sh{background:var(--bg);width:100%;max-height:92%;overflow:auto;border-radius:18px 18px 0 0;padding:16px;max-width:720px;margin:auto;display:grid;gap:10px}
+label{display:grid;gap:4px;font-size:13px;color:var(--mu)}input,select,textarea{border:1px solid var(--ln);background:var(--s);border-radius:10px;padding:10px;width:100%}
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:8px}.mu{color:var(--mu);font-size:13px}
+#t{position:fixed;left:12px;right:12px;bottom:90px;background:#111;color:#fff;padding:12px;border-radius:12px;z-index:9}
+</style></head><body><div class="w" id="app"></div><div id="t" hidden></div>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script>
+(function(){
+var SALAS=['Sala 1','Sala 2'],STAT=['agendado','confirmado','compareceu','faltou','remarcado','cancelado'];
+var $=function(s){return document.querySelector(s)},app=$('#app'),db,user,rows=[],day=new Date();
+day.setHours(0,0,0,0);
+function esc(t){return String(t==null?'':t).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})}
+function hm(d){return new Date(d).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}
+function ymd(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')}
+function v(id){return $('#'+id).value}
+function who(){return user.email.split('@')[0]}
+function toast(m){var t=$('#t');t.textContent=m;t.hidden=false;clearTimeout(toast.k);toast.k=setTimeout(function(){t.hidden=true},4000)}
+function sheet(h){close();var o=document.createElement('div');o.className='ov';o.id='ov';o.innerHTML='<div class="sh">'+h+'</div>';o.addEventListener('click',function(e){if(e.target===o)close()});document.body.appendChild(o)}
+function close(){var o=$('#ov');if(o)o.remove()}
+function profs(){try{return JSON.parse(localStorage.getItem('ag-profs'))||[]}catch(e){return[]}}
+
+function start(){
+  var c;try{c=JSON.parse(localStorage.getItem('ag-cfg'))}catch(e){}
+  if(!c)return setup();
+  db=window.supabase.createClient(c.u,c.k);
+  db.auth.getSession().then(function(r){user=r.data.session&&r.data.session.user;user?main():login()});
+}
+function setup(){
+  app.innerHTML='<h2>Configurar</h2><p class="mu">Cole o endereço (Project URL) e a chave anon do seu projeto no Supabase. Só precisa fazer isso uma vez em cada celular.</p><label>Project URL<input id="cu" inputmode="url" autocapitalize="off"></label><label>Chave anon (public)<input id="ck" autocapitalize="off"></label><button class="b p" id="cs">Salvar</button>';
+  $('#cs').onclick=function(){var u=v('cu').trim(),k=v('ck').trim();if(!u||!k){toast('Preencha os dois campos');return}localStorage.setItem('ag-cfg',JSON.stringify({u:u,k:k}));start()};
+}
+function login(){
+  app.innerHTML='<h2>Entrar</h2><label>E-mail<input id="le" type="email" autocapitalize="off"></label><label>Senha<input id="lp" type="password"></label><button class="b p" id="lg">Entrar</button><button class="b" id="lr">Trocar configuração</button>';
+  $('#lg').onclick=function(){db.auth.signInWithPassword({email:v('le').trim(),password:v('lp')}).then(function(r){if(r.error){toast('E-mail ou senha incorretos');return}user=r.data.user;main()})};
+  $('#lr').onclick=function(){localStorage.removeItem('ag-cfg');setup()};
+}
+function main(){
+  app.innerHTML='<div class="hd"><button class="b" id="pv">‹</button><b id="tt"></b><button class="b" id="nx">›</button></div><div class="hd"><button class="b" id="td">Hoje</button><input type="date" id="dp"><button class="b" id="so">Sair</button></div><div class="cols" id="cols"></div><button class="b p fab" id="nw" aria-label="Nova consulta">+</button>';
+  $('#pv').onclick=function(){go(-1)};$('#nx').onclick=function(){go(1)};
+  $('#td').onclick=function(){day=new Date();day.setHours(0,0,0,0);load()};
+  $('#dp').onchange=function(){if(this.value){var p=this.value.split('-');day=new Date(+p[0],+p[1]-1,+p[2]);load()}};
+  $('#so').onclick=function(){db.auth.signOut().then(login)};
+  $('#nw').onclick=function(){form()};
+  db.channel('ag').on('postgres_changes',{event:'*',schema:'public',table:'consultas'},function(){load()}).subscribe();
+  document.addEventListener('visibilitychange',function(){if(document.visibilityState==='visible'&&user)load()});
+  load();
+}
+function go(n){day.setDate(day.getDate()+n);load()}
+function load(){
+  var b=new Date(day);b.setDate(b.getDate()+1);
+  db.from('consultas').select('*').gte('inicio',day.toISOString()).lt('inicio',b.toISOString()).not('status','in','(cancelado,remarcado)').order('inicio').then(function(r){
+    if(r.error){toast('Erro ao carregar a agenda');return}rows=r.data;draw();
+  });
+}
+function draw(){
+  $('#tt').textContent=day.toLocaleDateString('pt-BR',{weekday:'long',day:'numeric',month:'long'});$('#dp').value=ymd(day);
+  $('#cols').innerHTML=SALAS.map(function(nm,i){
+    var l=rows.filter(function(x){return x.sala===i+1});
+    return '<div><h3>'+nm+'</h3>'+(l.length?l.map(function(x){return '<button class="c '+x.status+'" data-id="'+x.id+'"><b>'+hm(x.inicio)+'–'+hm(x.fim)+'</b> '+esc(x.paciente)+'<small>'+esc(x.profissional)+' · '+x.status+'</small></button>'}).join(''):'<p class="mu">Livre</p>')+'</div>';
+  }).join('');
+  [].forEach.call(document.querySelectorAll('.c'),function(e){e.onclick=function(){edit(e.dataset.id)}});
+}
+function form(){
+  var d=ymd(day),opt=function(a){return a.map(function(x){return '<option value="'+x[0]+'">'+x[1]+'</option>'}).join('')};
+  sheet('<h2 style="margin:0">Nova consulta</h2><label>Paciente<input id="f-p"></label><label>Telefone do responsável<input id="f-t" type="tel" inputmode="tel"></label><label>Profissional<input id="f-pr" list="pl"></label><datalist id="pl">'+profs().map(function(x){return '<option value="'+esc(x)+'">'}).join('')+'</datalist>'
+  +'<div class="g2"><label>Sala<select id="f-s">'+opt(SALAS.map(function(n,i){return[i+1,n]}))+'</select></label><label>Duração<select id="f-du">'+opt([[30,'30 min'],[45,'45 min'],[60,'1 hora']])+'</select></label></div>'
+  +'<div class="g2"><label>Dia<input id="f-d" type="date" value="'+d+'"></label><label>Hora<input id="f-h" type="time"></label></div>'
+  +'<label>Repetir toda semana por<select id="f-n">'+opt(Array.from({length:12},function(_,i){return[i+1,i?(i+1)+' semanas':'Não repetir']}))+'</select></label><label>Observação<input id="f-o"></label><button class="b p" id="f-ok">Agendar</button><button class="b" id="f-x">Fechar</button>');
+  $('#f-x').onclick=close;$('#f-ok').onclick=saveNew;
+}
+function saveNew(){
+  var p=v('f-p').trim(),pr=v('f-pr').trim(),d=v('f-d'),h=v('f-h');
+  if(!p||!pr||!d||!h){toast('Preencha paciente, profissional, dia e hora');return}
+  var s=d.split('-'),t=h.split(':'),dur=+v('f-du'),n=+v('f-n'),serie=n>1?crypto.randomUUID():null,out=[];
+  for(var i=0;i<n;i++){var a=new Date(+s[0],+s[1]-1,+s[2]+7*i,+t[0],+t[1]);
+    out.push({paciente:p,tel:v('f-t').trim(),profissional:pr,sala:+v('f-s'),inicio:a.toISOString(),fim:new Date(a.getTime()+dur*60000).toISOString(),obs:v('f-o').trim(),serie:serie,criado_por:who(),atualizado_por:who()})}
+  db.from('consultas').insert(out).then(function(r){
+    if(r.error){toast(r.error.code==='23P01'?'Conflito: a sala ou o profissional já está ocupado nesse horário (em alguma das semanas).':'Erro ao salvar');return}
+    var l=profs();if(l.indexOf(pr)<0){l.push(pr);localStorage.setItem('ag-profs',JSON.stringify(l))}
+    close();toast('Consulta agendada');load();
+  });
+}
+function edit(id){
+  var x=rows.filter(function(r){return r.id===id})[0];if(!x)return;
+  sheet('<h2 style="margin:0">'+esc(x.paciente)+'</h2><div class="mu">'+hm(x.inicio)+'–'+hm(x.fim)+' · '+SALAS[x.sala-1]+' · '+esc(x.profissional)+(x.tel?' · '+esc(x.tel):'')+'</div>'
+  +'<label>Status<select id="e-s">'+STAT.map(function(s){return '<option'+(s===x.status?' selected':'')+'>'+s+'</option>'}).join('')+'</select></label><label>Observação<input id="e-o" value="'+esc(x.obs)+'"></label>'
+  +'<div class="mu">Criado por '+esc(x.criado_por)+' · alterado por '+esc(x.atualizado_por)+' às '+hm(x.atualizado_em)+'</div>'
+  +'<button class="b p" id="e-ok">Salvar</button>'+(x.serie?'<button class="b dg" id="e-sr">Cancelar esta e as próximas semanas</button>':'')+'<button class="b dg" id="e-c">Cancelar só esta consulta</button><button class="b" id="e-x">Fechar</button>');
+  var upd=function(f,q){var o=Object.assign({atualizado_por:who(),atualizado_em:new Date().toISOString()},f);return q(db.from('consultas').update(o)).then(function(r){if(r.error){toast('Erro ao salvar');return}close();load()})};
+  $('#e-x').onclick=close;
+  $('#e-ok').onclick=function(){upd({status:v('e-s'),obs:v('e-o').trim()},function(q){return q.eq('id',id)})};
+  $('#e-c').onclick=function(){upd({status:'cancelado'},function(q){return q.eq('id',id)})};
+  if(x.serie)$('#e-sr').onclick=function(){upd({status:'cancelado'},function(q){return q.eq('serie',x.serie).gte('inicio',x.inicio)})};
+}
+start();
+})();
+</script></body></html>
